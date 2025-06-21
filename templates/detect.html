@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Single URL Detection - Phishing Detector{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-search"></i> Single URL Detection</h4>
+                </div>
+                <div class="card-body">
+                    {% if error %}
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> {{ error }}
+                    </div>
+                    {% endif %}
+                    
+                    <form method="POST" id="detectForm">
+                        <div class="mb-3">
+                            <label for="url" class="form-label">URL to Check</label>
+                            <input type="url" class="form-control form-control-lg" id="url" name="url" 
+                                   placeholder="https://example.com" required 
+                                   value="{{ url if url else '' }}">
+                            <div class="form-text">Enter the complete URL including http:// or https://</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="model" class="form-label">Model Selection (Optional)</label>
+                            <select class="form-select" id="model" name="model">
+                                <option value="">Use Best Model</option>
+                                <option value="Random Forest">Random Forest</option>
+                                <option value="SVM">Support Vector Machine</option>
+                                <option value="Logistic Regression">Logistic Regression</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-lg w-100">
+                            <i class="fas fa-search"></i> Analyze URL
+                        </button>
+                    </form>
+                    
+                    <div class="loading text-center mt-4" id="loadingDiv">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">Analyzing URL...</p>
+                    </div>
+                </div>
+            </div>
+            
+            {% if result %}
+            <div class="card mt-4 result-card {{ 'phishing' if result.prediction_numeric == 1 else 'legitimate' }}">
+                <div class="card-body text-center">
+                    <i class="fas {{ 'fa-exclamation-triangle' if result.prediction_numeric == 1 else 'fa-check-circle' }} fa-4x mb-3"></i>
+                    <h3>{{ result.prediction }}</h3>
+                    <p class="lead">{{ 'This URL appears to be malicious!' if result.prediction_numeric == 1 else 'This URL appears to be safe.' }}</p>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <strong>URL:</strong><br>
+                            <span class="text-break">{{ result.url }}</span>
+                        </div>
+                        {% if result.confidence %}
+                        <div class="col-md-3">
+                            <strong>Confidence:</strong><br>
+                            {{ "%.1f" | format(result.confidence * 100) }}%
+                        </div>
+                        {% endif %}
+                        <div class="col-md-3">
+                            <strong>Model Used:</strong><br>
+                            {{ result.model_used }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {% if result.features %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Extracted Features</h5>
+                </div>
+                <div class="card-body">
+                    <div class="feature-grid">
+                        {% for feature, value in result.features.items() %}
+                        <div class="feature-item">
+                            <strong>{{ feature.replace('_', ' ').title() }}:</strong> {{ value }}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('detectForm').addEventListener('submit', function() {
+    document.getElementById('loadingDiv').style.display = 'block';
+});
+</script>
+{% endblock %}

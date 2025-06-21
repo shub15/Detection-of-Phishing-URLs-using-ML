@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container text-center">
+        <h1 class="display-4 mb-4">
+            <i class="fas fa-shield-alt"></i> Phishing URL Detection
+        </h1>
+        <p class="lead mb-4">
+            Protect yourself from malicious websites using advanced machine learning algorithms
+        </p>
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card bg-white text-dark">
+                    <div class="card-body">
+                        <form id="quickDetectForm">
+                            <div class="input-group input-group-lg">
+                                <input type="url" class="form-control" id="quickUrl" 
+                                       placeholder="Enter URL to check (e.g., https://example.com)" required>
+                                <button class="btn btn-primary" type="submit">
+                                    <i class="fas fa-search"></i> Check URL
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container my-5">
+    <div id="quickResult"></div>
+    
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-search fa-3x text-primary mb-3"></i>
+                    <h5 class="card-title">Single URL Detection</h5>
+                    <p class="card-text">Check individual URLs for phishing attempts with detailed analysis.</p>
+                    <a href="/detect" class="btn btn-primary">Start Detection</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-list fa-3x text-success mb-3"></i>
+                    <h5 class="card-title">Batch Processing</h5>
+                    <p class="card-text">Analyze multiple URLs at once for efficient bulk scanning.</p>
+                    <a href="/batch" class="btn btn-success">Batch Scan</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-brain fa-3x text-info mb-3"></i>
+                    <h5 class="card-title">AI-Powered</h5>
+                    <p class="card-text">Advanced machine learning models including Random Forest, SVM, and more.</p>
+                    <button class="btn btn-info" onclick="showModels()">View Models</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-5">
+        <div class="col-12">
+            <h3 class="text-center mb-4">How It Works</h3>
+        </div>
+        <div class="col-md-3 text-center mb-4">
+            <div class="bg-light p-4 rounded">
+                <i class="fas fa-link fa-2x text-primary mb-3"></i>
+                <h6>1. URL Input</h6>
+                <p class="small">Enter the URL you want to analyze</p>
+            </div>
+        </div>
+        <div class="col-md-3 text-center mb-4">
+            <div class="bg-light p-4 rounded">
+                <i class="fas fa-cogs fa-2x text-success mb-3"></i>
+                <h6>2. Feature Extraction</h6>
+                <p class="small">Extract 17+ features from the URL</p>
+            </div>
+        </div>
+        <div class="col-md-3 text-center mb-4">
+            <div class="bg-light p-4 rounded">
+                <i class="fas fa-robot fa-2x text-warning mb-3"></i>
+                <h6>3. AI Analysis</h6>
+                <p class="small">Machine learning models analyze patterns</p>
+            </div>
+        </div>
+        <div class="col-md-3 text-center mb-4">
+            <div class="bg-light p-4 rounded">
+                <i class="fas fa-shield-alt fa-2x text-danger mb-3"></i>
+                <h6>4. Result</h6>
+                <p class="small">Get instant phishing detection results</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('quickDetectForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const url = document.getElementById('quickUrl').value;
+    
+    if (!url) return;
+    
+    // Show loading
+    document.getElementById('quickResult').innerHTML = `
+        <div class="alert alert-info text-center">
+            <i class="fas fa-spinner fa-spin"></i> Analyzing URL...
+        </div>
+    `;
+    
+    fetch('/api/detect', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({url: url})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            document.getElementById('quickResult').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${data.error}
+                </div>
+            `;
+        } else {
+            const resultClass = data.prediction_numeric === 1 ? 'phishing' : 'legitimate';
+            const icon = data.prediction_numeric === 1 ? 'fa-exclamation-triangle' : 'fa-check-circle';
+            
+            document.getElementById('quickResult').innerHTML = `
+                <div class="card result-card ${resultClass} mb-4">
+                    <div class="card-body text-center">
+                        <i class="fas ${icon} fa-3x mb-3"></i>
+                        <h4>Result: ${data.prediction}</h4>
+                        <p class="mb-0">URL: ${data.url}</p>
+                        ${data.confidence ? `<p class="mb-0">Confidence: ${(data.confidence * 100).toFixed(1)}%</p>` : ''}
+                        <p class="mb-0">Model: ${data.model_used}</p>
+                    </div>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        document.getElementById('quickResult').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Error: ${error.message}
+            </div>
+        `;
+    });
+});
+
+function showModels() {
+    fetch('/api/models')
+    .then(response => response.json())
+    .then(data => {
+        const modelsList = data.models.length > 0 ? data.models.join(', ') : 'No models loaded';
+        alert(`Available Models: ${modelsList}\nBest Model: ${data.best_model || 'None'}`);
+    })
+    .catch(error => {
+        alert('Error loading models: ' + error.message);
+    });
+}
+</script>
+{% endblock %}

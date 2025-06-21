@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Detection - Phishing Detector{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0"><i class="fas fa-list"></i> Batch URL Detection</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Enter multiple URLs (one per line) to analyze them all at once.</p>
+                    
+                    <form id="batchForm">
+                        <div class="mb-3">
+                            <label for="urls" class="form-label">URLs to Check</label>
+                            <textarea class="form-control" id="urls" rows="10" 
+                                      placeholder="https://example1.com&#10;https://example2.com&#10;http://suspicious-site.com" required></textarea>
+                            <div class="form-text">Enter one URL per line. Maximum 50 URLs per batch.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="batchModel" class="form-label">Model Selection (Optional)</label>
+                            <select class="form-select" id="batchModel">
+                                <option value="">Use Best Model</option>
+                                <option value="Random Forest">Random Forest</option>
+                                <option value="SVM">Support Vector Machine</option>
+                                <option value="Logistic Regression">Logistic Regression</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-play"></i> Analyze All URLs
+                        </button>
+                        
+                        <button type="button" class="btn btn-secondary ms-2" onclick="clearResults()">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </form>
+                    
+                    <div class="loading text-center mt-4" id="batchLoading">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">Analyzing URLs...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="batchResults" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('batchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const urlsText = document.getElementById('urls').value.trim();
+    const model = document.getElementById('batchModel').value;
+    
+    if (!urlsText) return;
+    
+    const urls = urlsText.split('\n').map(url => url.trim()).filter(url => url);
+    
+    if (urls.length === 0) {
+        alert('Please enter at least one URL');
+        return;
+    }
+    
+    if (urls.length > 50) {
+        alert('Maximum 50 URLs allowed per batch');
+        return;
+    }
+    
+    document.getElementById('batchLoading').style.display = 'block';
+    document.getElementById('batchResults').innerHTML = '';
+    
+    fetch('/api/batch_detect', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            urls: urls,
+            model: model || null
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('batchLoading').style.display = 'none';
+        
+        if (data.error) {
+            document.getElementById('batchResults').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${data.error}
+                </div>
+            `;
+            return;
+        }
+        
+        const results = data.results;
+        let phishingCount = 0;
+        let legitimateCount = 0;
+        let errorCount = 0;
+        
+        let resultsHtml = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Batch Analysis Results</h5>
+                </div>
+                <div class="card-body">
+        `;
+        
+        results.forEach((result, index) => {
+            if (result.error) {
+                errorCount++;
+                resultsHtml += `
+                    <div class="alert alert-warning mb-2">
+                        <strong>URL ${index + 1}:</strong> ${result.error}
+                    </div>
+                `;
+            } else {
+                if (result.prediction_numeric === 1) {
+                    phishingCount++;
+                } else {
+                    legitimateCount++;
+                }
+                
+                const resultClass = result.prediction_numeric === 1 ? 'danger' : 'success';
+                const icon = result.prediction_numeric === 1 ? 'fa-exclamation-triangle' : 'fa-check-circle';
+                
+                resultsHtml += `
+                    <div class="alert alert-${resultClass} mb-2">
+                        <div class="row align-items-center">
+                            <div class="col-md-1 text-center">
+                                <i class="fas ${icon}"></i>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>${result.prediction}</strong><br>
+                                <span class="text-break small">${result.url}</span>
+                            </div>
+                            <div class="col-md-3">
+                                ${result.confidence ? `Confidence: ${(result.confidence * 100).toFixed(1)}%` : ''}
+                            </div>
+                            <div class="col-md-2">
+                                <small>${result.model_used}</small>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        // Add summary
+        resultsHtml = `
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div class="bg-success text-white p-3 rounded">
+                                <h4>${legitimateCount}</h4>
+                                <small>Legitimate</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-danger text-white p-3 rounded">
+                                <h4>${phishingCount}</h4>
+                                <small>Phishing</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-warning text-white p-3 rounded">
+                                <h4>${errorCount}</h4>
+                                <small>Errors</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="bg-info text-white p-3 rounded">
+                                <h4>${results.length}</h4>
+                                <small>Total</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ` + resultsHtml + '</div></div>';
+        
+        document.getElementById('batchResults').innerHTML = resultsHtml;
+    })
+    .catch(error => {
+        document.getElementById('batchLoading').style.display = 'none';
+        document.getElementById('batchResults').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> Error: ${error.message}
+            </div>
+        `;
+    });
+});
+
+function clearResults() {
+    document.getElementById('urls').value = '';
+    document.getElementById('batchResults').innerHTML = '';
+}
+</script>
+{% endblock %}
