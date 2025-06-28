@@ -11,6 +11,7 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 import joblib
 import warnings
 warnings.filterwarnings('ignore')
@@ -20,6 +21,291 @@ class PhishingURLDetector:
         self.models = {}
         self.scaler = StandardScaler()
         self.feature_names = []
+        self.imputer = SimpleImputer(strategy='mean')
+        
+    def parse_csv_file(self, file_path):
+        """
+        Parse a CSV file containing URL and Label columns with robust error handling.
+        
+        Parameters:
+        file_path (str): Path to the CSV file
+        
+        Returns:
+        tuple: (urls, labels) where urls is a list of processed URLs and 
+               labels is a list of numeric labels (0 for 'good', 1 for 'bad')
+        """
+        try:
+            # Read the CSV file
+            df = pd.read_csv(file_path)
+            
+            # Check if required columns exist
+            if 'URL' not in df.columns or 'Label' not in df.columns:
+                raise ValueError("CSV file must contain 'URL' and 'Label' columns")
+            
+            print(f"Initial dataset size: {len(df)} rows")
+            
+            # Remove rows with missing URLs or Labels
+            df = df.dropna(subset=['URL', 'Label'])
+            print(f"After removing missing values: {len(df)} rows")
+            
+            # Process URLs and Labels
+            processed_data = []
+            skipped_count = 0
+            
+            for idx, row in df.iterrows():
+                try:
+                    # Clean and validate URL
+                    cleaned_url = self.clean_url(str(row['URL']))
+                    if not self.is_valid_url(cleaned_url):
+                        skipped_count += 1
+                        continue
+                    
+                    # Process label
+                    label = self.process_label(str(row['Label']))
+                    if label is None:
+                        skipped_count += 1
+                        continue
+                    
+                    processed_data.append((cleaned_url, label))
+                    
+                except Exception as e:
+                    skipped_count += 1
+                    continue
+            
+            print(f"Successfully processed: {len(processed_data)} URLs")
+            print(f"Skipped due to errors: {skipped_count} URLs")
+            
+            if not processed_data:
+                print("No valid data found!")
+                return [], []
+            
+            # Separate URLs and labels
+            urls, labels = zip(*processed_data)
+            return list(urls), list(labels)
+            
+        except FileNotFoundError:
+            print(f"Error: File '{file_path}' not found")
+            return [], []
+        except pd.errors.EmptyDataError:
+            print("Error: CSV file is empty")
+            return [], []
+        except Exception as e:
+            print(f"Error processing CSV file: {str(e)}")
+            return [], []
+
+    def clean_url(self, url):
+        """
+        Clean and standardize URL format with robust error handling.
+        
+        Parameters:
+        url (str): Raw URL string
+        
+        Returns:
+        str: Cleaned URL or None if invalid
+        """
+        try:
+            # Remove leading/trailing whitespace
+            url = url.strip()
+            
+            # Check for empty or invalid URLs
+            if not url or url.lower() in ['nan', 'null', '']:
+                return None
+            
+            # Remove obvious encoding artifacts and special characters
+            # Keep only printable ASCII characters for URL processing
+            url = ''.join(char for char in url if ord(char) < 128 and char.isprintable())
+            
+            # Fix common URL issues
+            url = url.replace(' ', '')  # Remove spaces
+            url = re.sub(r'https?://https?://', 'https://', url)  # Fix double protocols
+            
+            # Add protocol if missing
+            if not re.match(r'^https?://', url, re.IGNORECASE):
+                url = 'https://' + url
+            
+            # Basic URL validation using regex
+            url_pattern = re.compile(
+                r'^https?://'  # http:// or https://
+                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+                r'localhost|'  # localhost...
+                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+                r'(?::\d+)?'  # optional port
+                r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+            
+            if not url_pattern.match(url):
+                return None
+                
+            return url
+            
+        except Exception:
+            return None
+
+    def is_valid_url(self, url):
+        """
+        Validate if URL can be processed without errors.
+        
+        Parameters:
+        url (str): URL to validate
+        
+        Returns:
+        bool: True if URL is valid for processing
+        """
+        if not url:
+            return False
+            
+        try:
+            # Try to parse the URL
+            parsed = urlparse(url)
+            
+            # Check if essential components exist
+            if not parsed.netloc:
+                return False
+                
+            # Check for reasonable length (avoid extremely long URLs)
+            if len(url) > 2048:
+                return False
+                
+            return True
+            
+        except Exception:
+            return False
+
+    def process_label(self, label):
+        """
+        Convert label to numeric format.
+        
+        Parameters:
+        label (str): Label string
+        
+        Returns:
+        int: 0 for 'good', 1 for 'bad', None for invalid
+        """
+        try:
+            label_str = str(label).lower().strip()
+            
+            if label_str in ['good', '0', 'legitimate', 'benign']:
+                return 0
+            elif label_str in ['bad', '1', 'phishing', 'malicious']:
+                return 1
+            else:
+                return None
+                
+        except Exception:
+            return None
+
+    def handle_feature_nan(self, X):
+        """
+        Handle NaN values in feature matrix.
+        
+        Parameters:
+        X (array-like): Feature matrix that may contain NaN values
+        
+        Returns:
+        array: Feature matrix with NaN values handled
+        """
+        try:
+            # Convert to numpy array if not already
+            X = np.array(X)
+            
+            # Check for NaN values
+            nan_count = np.isnan(X).sum()
+            if nan_count > 0:
+                print(f"Found {nan_count} NaN values in features. Imputing with mean values...")
+                
+                # Fit and transform the data
+                X = self.imputer.fit_transform(X)
+                
+                # Double-check for any remaining NaN values
+                remaining_nan = np.isnan(X).sum()
+                if remaining_nan > 0:
+                    print(f"Warning: {remaining_nan} NaN values still remain. Replacing with 0...")
+                    X = np.nan_to_num(X, nan=0.0)
+            
+            return X
+            
+        except Exception as e:
+            print(f"Error handling NaN values: {str(e)}")
+            # Fallback: replace all NaN with 0
+            return np.nan_to_num(X, nan=0.0)
+
+    def extract_features_safely(self, urls):
+        """
+        Extract features from URLs with error handling.
+        
+        Parameters:
+        urls (list): List of URLs
+        
+        Returns:
+        array: Feature matrix
+        """
+        features = []
+        valid_indices = []
+        
+        print("Extracting features with error handling...")
+        
+        for i, url in enumerate(urls):
+            try:
+                # Your existing feature extraction method here
+                # Replace this with your actual feature extraction logic
+                feature_vector = self.extract_features(url)
+                
+                if feature_vector is not None:
+                    features.append(feature_vector)
+                    valid_indices.append(i)
+                    
+            except Exception as e:
+                print(f"Skipping URL {i}: {str(e)[:100]}...")
+                continue
+        
+        if not features:
+            raise ValueError("No features could be extracted from any URLs")
+        
+        # Convert to numpy array and handle NaN values
+        X = np.array(features)
+        X = self.handle_feature_nan(X)
+        
+        print(f"Successfully extracted features from {len(features)} URLs")
+        return X, valid_indices
+
+    def extract_url_features(self, url):
+        """
+        Placeholder for your actual feature extraction method.
+        Replace this with your existing feature extraction logic.
+        
+        Parameters:
+        url (str): URL to extract features from
+        
+        Returns:
+        list: Feature vector
+        """
+        # This is a placeholder - replace with your actual feature extraction
+        # For now, returning dummy features to avoid errors
+        try:
+            parsed = urlparse(url)
+            
+            # Example basic features - replace with your actual features
+            features = [
+                len(url),                          # URL length
+                len(parsed.netloc),                # Domain length
+                url.count('.'),                    # Number of dots
+                url.count('-'),                    # Number of hyphens
+                url.count('_'),                    # Number of underscores
+                url.count('/'),                    # Number of slashes
+                url.count('?'),                    # Number of question marks
+                url.count('='),                    # Number of equals
+                url.count('&'),                    # Number of ampersands
+                1 if 'https' in url else 0,       # HTTPS usage
+                # Add your other 28 features here...
+            ]
+            
+            # Pad to 38 features if needed (replace with your actual 38 features)
+            while len(features) < 38:
+                features.append(0)
+            
+            return features[:38]  # Ensure exactly 38 features
+            
+        except Exception:
+            return None
         
     def extract_features(self, url):
         """Extract features from URL for phishing detection"""
@@ -290,9 +576,29 @@ def main():
     # Initialize detector
     detector = PhishingURLDetector()
     
-    # Create sample dataset
-    print("\nCreating sample dataset...")
-    urls, labels = detector.create_sample_dataset(1000)
+    # # Create sample dataset
+    # print("\nCreating sample dataset...")
+    # urls, labels = detector.create_sample_dataset(1000)
+    
+    file_path = "../Datasets/phishing_urls/phishing_site_urls_Copy.csv"
+    
+    urls, labels = detector.parse_csv_file(file_path)
+    
+    if urls and labels:
+        print(f"\nSample data:")
+        for i in range(min(5, len(urls))):
+            print(f"{i+1}. URL: {urls[i][:80]}..., Label: {labels[i]}")
+        
+        # Extract features safely
+        try:
+            X, valid_indices = detector.extract_features_safely(urls)
+            y = np.array(labels)[valid_indices]  # Match labels to valid URLs
+            
+            print(f"\nFinal dataset: {X.shape[0]} samples with {X.shape[1]} features")
+            print(f"Labels distribution: {np.bincount(y)}")
+            
+        except Exception as e:
+            print(f"Feature extraction failed: {str(e)}")
     
     # Prepare data
     print("Extracting features...")
