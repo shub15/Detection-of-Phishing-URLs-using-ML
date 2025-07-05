@@ -45,7 +45,7 @@ async function checkURL(url, tabId) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: url })
+      body: JSON.stringify({ url: url }),
     });
     
     if (!response.ok) {

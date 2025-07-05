@@ -56,6 +56,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     //         url: chrome.runtime.getURL('http://localhost:5000/') 
     //     });
     // });
+    
+    document.getElementById('option-btn')?.addEventListener('click', function() {
+        chrome.tabs.create({ 
+            url: chrome.runtime.getURL('options.html') 
+        });
+    });
+
     document.getElementById('details-btn')?.addEventListener('click', function() {
         window.open("http://localhost:5000/", "_blank");
     });
@@ -333,7 +340,7 @@ function showSuspiciousFeatures(features) {
     if (suspiciousCount > 0) {
         featuresList.innerHTML = `
             <div class="features-header">
-                <h3>🚨 Suspicious Features Detected (${suspiciousCount})</h3>
+                <h3>Suspicious Features Detected (${suspiciousCount})</h3>
                 <p>These features indicate this might be a phishing website:</p>
             </div>
             ${featuresHtml}
